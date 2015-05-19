@@ -4,6 +4,7 @@ import android.graphics.Canvas;
 import android.graphics.Rect;
 import android.support.v7.widget.LinearLayoutManager;
 import android.support.v7.widget.RecyclerView;
+import android.util.Log;
 import android.util.SparseArray;
 import android.view.View;
 
@@ -26,20 +27,24 @@ public class StickyRecyclerHeadersDecoration extends RecyclerView.ItemDecoration
 
   // TODO: Consider passing in orientation to simplify orientation accounting within calculation
   public StickyRecyclerHeadersDecoration(StickyRecyclerHeadersAdapter adapter) {
-    this(adapter, new LinearLayoutOrientationProvider(), new DimensionCalculator());
+    this(adapter, 1);
+  }
+
+  public StickyRecyclerHeadersDecoration(StickyRecyclerHeadersAdapter adapter, int gridSpanCount) {
+    this(adapter, new LinearLayoutOrientationProvider(), new DimensionCalculator(), gridSpanCount);
   }
 
   private StickyRecyclerHeadersDecoration(StickyRecyclerHeadersAdapter adapter, OrientationProvider orientationProvider,
-      DimensionCalculator dimensionCalculator) {
+      DimensionCalculator dimensionCalculator, int gridSpanCount) {
     this(adapter, orientationProvider, dimensionCalculator, new HeaderRenderer(orientationProvider),
-        new HeaderViewCache(adapter, orientationProvider));
+        new HeaderViewCache(adapter, orientationProvider), gridSpanCount);
   }
 
   private StickyRecyclerHeadersDecoration(StickyRecyclerHeadersAdapter adapter, OrientationProvider orientationProvider,
-      DimensionCalculator dimensionCalculator, HeaderRenderer headerRenderer, HeaderProvider headerProvider) {
+      DimensionCalculator dimensionCalculator, HeaderRenderer headerRenderer, HeaderProvider headerProvider,
+      int gridSpanCount) {
     this(adapter, headerRenderer, orientationProvider, dimensionCalculator, headerProvider,
-        new HeaderPositionCalculator(adapter, headerProvider, orientationProvider,
-            dimensionCalculator));
+            new HeaderPositionCalculator(adapter, headerProvider, orientationProvider, dimensionCalculator, gridSpanCount));
   }
 
   private StickyRecyclerHeadersDecoration(StickyRecyclerHeadersAdapter adapter, HeaderRenderer headerRenderer,
@@ -60,8 +65,8 @@ public class StickyRecyclerHeadersDecoration extends RecyclerView.ItemDecoration
     if (itemPosition == RecyclerView.NO_POSITION) {
         return;
     }
-    if (mHeaderPositionCalculator.hasNewHeader(itemPosition)) {
-      View header = getHeaderView(parent, itemPosition);
+    if (mHeaderPositionCalculator.hasNewHeaderInItemRow(itemPosition)) {
+      View header = getHeaderView(parent, mHeaderPositionCalculator.getNewHeaderItemPosition(itemPosition));
       setItemOffsetsForHeader(outRect, header, mOrientationProvider.getOrientation(parent));
     }
   }
@@ -97,22 +102,21 @@ public class StickyRecyclerHeadersDecoration extends RecyclerView.ItemDecoration
       if (position == RecyclerView.NO_POSITION) {
           continue;
       }
+      Log.d("tag", "rendering list item "+i+" position " + position);
       if (hasStickyHeader(i, position) || mHeaderPositionCalculator.hasNewHeader(position)) {
-        View header = mHeaderProvider.getHeader(parent, position);
+        Log.d("tag", "pos " + position + ", new header position "+mHeaderPositionCalculator.getNewHeaderItemPosition(position));
+        View header = mHeaderProvider.getHeader(parent, mHeaderPositionCalculator.getNewHeaderItemPosition(position));
         Rect headerOffset = mHeaderPositionCalculator.getHeaderBounds(parent, header,
             itemView, hasStickyHeader(i, position));
         mRenderer.drawHeader(parent, canvas, header, headerOffset);
         mHeaderRects.put(position, headerOffset);
       }
+      Log.d("tag", "====");
     }
   }
 
   private boolean hasStickyHeader(int listChildPosition, int indexInList) {
-    if (listChildPosition > 0 || mAdapter.getHeaderId(indexInList) < 0) {
-      return false;
-    }
-
-    return true;
+    return listChildPosition <= mHeaderPositionCalculator.getGridSpanCount() - 1 && mAdapter.getHeaderId(indexInList) >= 0;
   }
 
   /**

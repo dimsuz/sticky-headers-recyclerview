@@ -3,6 +3,7 @@ package com.timehop.stickyheadersrecyclerview;
 import android.graphics.Rect;
 import android.support.v7.widget.LinearLayoutManager;
 import android.support.v7.widget.RecyclerView;
+import android.util.Log;
 import android.view.View;
 
 import com.timehop.stickyheadersrecyclerview.caching.HeaderProvider;
@@ -18,13 +19,19 @@ public class HeaderPositionCalculator {
   private final OrientationProvider mOrientationProvider;
   private final HeaderProvider mHeaderProvider;
   private final DimensionCalculator mDimensionCalculator;
+  private final int mRowItemCount;
 
   public HeaderPositionCalculator(StickyRecyclerHeadersAdapter adapter, HeaderProvider headerProvider,
-      OrientationProvider orientationProvider, DimensionCalculator dimensionCalculator) {
+      OrientationProvider orientationProvider, DimensionCalculator dimensionCalculator, int gridSpanCount) {
     mAdapter = adapter;
     mHeaderProvider = headerProvider;
     mOrientationProvider = orientationProvider;
     mDimensionCalculator = dimensionCalculator;
+    mRowItemCount = gridSpanCount;
+  }
+
+  public int getGridSpanCount() {
+    return mRowItemCount;
   }
 
   /**
@@ -36,6 +43,56 @@ public class HeaderPositionCalculator {
    * @see {@link StickyRecyclerHeadersAdapter#getHeaderId(int)}
    */
   public boolean hasNewHeader(int position) {
+    // row can have 1 or more items (one is usually the case for LinearLayoutManager, more - GridLayoutManager)
+    // NOTE: this is not very correct implementation, just a really quick one.
+    // for example it wouldn't correctly handle the case when header has horizontal margins.
+    // and it is not really tested for horizontal grid layouts
+    // for linear layouts it should work without any errors
+    return hasNewHeaderInItemRow(position) && isFirstItemInRow(position);
+  }
+
+  /**
+   * Determines if header is started over this item, rather than just spans over this item.
+   * I.e. for horizontal grid's row [item][item-with-new-header-id][item] this will return [false][true][false]
+   */
+  public boolean isFirstItemInRow(int itemPosition) {
+    int row = itemPosition / mRowItemCount;
+    int firstItem = row * mRowItemCount;
+    return itemPosition == firstItem;
+  }
+
+  public boolean hasNewHeaderInItemRow(int itemPosition) {
+    return getNewHeaderItemPosition(itemPosition) != -1;
+  }
+
+  /**
+   * Given the position range will search if *new* header exists in it, inclusive, and return
+   * a position of first found header or -1 if no *new* header is found in this range
+   */
+  private int getNewHeaderPositionInRange(int firstPosition, int lastPosition) {
+    Log.d("tag", "checking for new headers from " + firstPosition+ " to "+lastPosition);
+    for(int i = firstPosition; i <= lastPosition; i++) {
+      if(itemHasNewHeader(i)) {
+        return i;
+      }
+    }
+    return -1;
+  }
+
+  /**
+   * Given an item position will find if this item's row has a new header and return the exact item
+   * position which has this header or -1 if no new header is found.
+   * Example: for grid row [item][item-with-new-header-id][item] this function will return position of the item in the middle,
+   * when given *any* item position from this row
+   */
+  public int getNewHeaderItemPosition(int itemPosition) {
+    int row = itemPosition / mRowItemCount;
+    int firstItem = row * mRowItemCount;
+    int lastItem = firstItem + mRowItemCount - 1;
+    return getNewHeaderPositionInRange(firstItem, lastItem);
+  }
+
+  private boolean itemHasNewHeader(int position) {
     if (indexOutOfBounds(position)) {
       return false;
     }
@@ -72,12 +129,12 @@ public class HeaderPositionCalculator {
     int translationX, translationY;
     Rect headerMargins = mDimensionCalculator.getMargins(header);
     if (orientation == LinearLayoutManager.VERTICAL) {
-      translationX = firstView.getLeft() + headerMargins.left;
+      translationX = getListLeft(recyclerView) + headerMargins.left;
       translationY = Math.max(
           firstView.getTop() - header.getHeight() - headerMargins.bottom,
           getListTop(recyclerView) + headerMargins.top);
     } else {
-      translationY = firstView.getTop() + headerMargins.top;
+      translationY = getListTop(recyclerView) + headerMargins.top;
       translationX = Math.max(
           firstView.getLeft() - header.getWidth() - headerMargins.right,
           getListLeft(recyclerView) + headerMargins.left);
